@@ -30,38 +30,79 @@ PhaserPlaybook = function(scene) {
         }
 
         this._plays.push(myPlaybook);
-        this._runPlaybook(myPlaybook);
+        this._configureDefaults(myPlaybook);
+        this._runPlaybookNextDirection(myPlaybook);
 
         return myPlaybook;
     }
-
+    
     /**
       * PRIVATE
     **/
-    this._runPlaybook = function(playbook){
-        while(playbook.currentDirectionIndex < playbook.playbookObj.directions.length){
-            var nextDirection = playbook.playbookObj.directions[playbook.currentDirectionIndex];
-            var nextActor = playbook.playbookObj.actors[nextDirection.actor_id];
+    this._configureDefaults = function(playbook){
+        if(playbook.playbookObj.defaults){
+            if(playbook.playbookObj.defaults.movement_speed){
+                Object.keys(playbook.playbookObj.actors).forEach(function(actorKey){
+                    var actor = playbook.playbookObj.actors[actorKey];
 
-            console.log(nextDirection, nextActor);
-            this._executePlaybookDirection(nextActor, nextDirection, playbook);
-
-            playbook.currentDirectionIndex++;
+                    if(!actor.movement_speed){
+                        actor.movement_speed = playbook.playbookObj.defaults.movement_speed;
+                    }
+                }, this);
+            }
         }
     }
 
     /**
       * PRIVATE
     **/
-    this._executePlaybookDirection = function(actor, direction, playbook){
+    this._runPlaybookNextDirection = function(playbook){
+        if(playbook.currentDirectionIndex < playbook.playbookObj.directions.length){
+            var nextDirection = playbook.playbookObj.directions[playbook.currentDirectionIndex];
+            var nextActor = playbook.playbookObj.actors[nextDirection.actor_id];
+
+            playbook.currentDirectionIndex++;
+
+            console.log(nextDirection, nextActor);
+            this._executeDirection(nextActor, nextDirection, playbook);
+        }
+    }
+
+    /**
+      * PRIVATE
+    **/
+    this._executeDirection = function(actor, direction, playbook){
         switch(direction.type){
             case 'create_actor':
                 this._createActor(actor, direction.parameters, playbook);
                 break;
+            case 'delay_playbook':
+                this._delayPlaybook(direction.parameters, playbook);
+                break;
             case 'move_actor':
                 this._moveActor(actor, direction.parameters, playbook);
                 break;
+            case 'teleport_actor':
+                this._teleportActor(actor, direction.parameters, playbook);
+                break;
+            case 'play_animation':
+                this._playAnimation(actor, direction.parameters, playbook);
+                break;
         }
+    }
+
+    /**
+      * PRIVATE
+    **/
+    this._calculateMovementDuration = function(actorSpeed, actorOldPos, actorNewPos){
+        var duration = 0;
+
+        if(actorSpeed){
+            //TODO: find if 600 is a good number or not
+            duration = Phaser.Math.Distance.Between(actorOldPos.x, actorOldPos.y, actorNewPos.x, actorNewPos.y)/(actorSpeed/600);
+        }
+
+        return duration;
     }
 
     /**
@@ -72,25 +113,84 @@ PhaserPlaybook = function(scene) {
         var initFrame = parameters.initial_frame || 0;
         
         actor.sprite = this.scene.add.sprite(initPos.x, initPos.y, actor.sprite_key, initFrame);
+
+        this._runPlaybookNextDirection(playbook);
     }
 
     /**
-      *
+      * PRIVATE
+    **/
+    this._delayPlaybook = function(parameters, playbook){
+        var duration = parameters.duration || 1000;
+
+        var me = this;
+        this.scene.time.delayedCall(duration, function(){
+            me._runPlaybookNextDirection(playbook);
+        });
+    }
+
+    /**
+      * PRIVATE
     **/
     this._moveActor = function(actor, parameters, playbook){
         var newPos = parameters.new_position;
-        var duration = parameters.duration || 1000;
+        var blockScene = parameters.blockScene !== false;
 
         if(!actor.sprite){
             this._createActor(actor, { }, playbook);
         }
 
-        this.scene.add.tween({
+        var duration = parameters.duration || 
+                this._calculateMovementDuration(actor.movement_speed, {x: actor.sprite.x, y: actor.sprite.y}, {x: newPos.x, y: newPos.y}) || 
+                1000;
+
+        var me = this;
+        this.scene.tweens.add({
             targets: actor.sprite,
             x: newPos.x,
-            y: newPos.x,
-            duration: duration
+            y: newPos.y,
+            duration: duration,
+            onComplete: function(){
+                if(blockScene){
+                    me._runPlaybookNextDirection(playbook);
+                }
+            }
         });
+
+        if(!blockScene){
+            me._runPlaybookNextDirection(playbook);
+        }
+    }
+
+    /**
+      * PRIVATE
+    **/
+    this._teleportActor = function(actor, parameters, playbook){
+        var newPos = parameters.new_position;
+
+        actor.sprite.x = newPos.x;
+        actor.sprite.y = newPos.y;
+
+        this._runPlaybookNextDirection(playbook);
+    }
+
+    /**
+      * PRIVATE
+    **/
+    this._playAnimation = function(actor, parameters, playbook){
+        var animationKey = parameters.animation_key;
+        var blockScene = parameters.block_scene !== false;
+
+        actor.sprite.play(animationKey);
+
+        if(!blockScene){
+            this._runPlaybookNextDirection(playbook);
+        } else {
+            var me = this;
+            actor.sprite.once('animationcomplete', function(){
+                me._runPlaybookNextDirection(playbook);
+            })
+        }
     }
 }
 
