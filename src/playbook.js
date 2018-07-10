@@ -26,7 +26,8 @@ PhaserPlaybook = function(scene) {
         var myPlaybook = {
             playbookObj: playbookObj,
             currentDirectionIndex: 0,
-            paused: false
+            paused: false,
+            dialogSprites: []
         }
 
         this._plays.push(myPlaybook);
@@ -41,15 +42,7 @@ PhaserPlaybook = function(scene) {
     **/
     this._configureDefaults = function(playbook){
         if(playbook.playbookObj.defaults){
-            if(playbook.playbookObj.defaults.movement_speed){
-                Object.keys(playbook.playbookObj.actors).forEach(function(actorKey){
-                    var actor = playbook.playbookObj.actors[actorKey];
 
-                    if(!actor.movement_speed){
-                        actor.movement_speed = playbook.playbookObj.defaults.movement_speed;
-                    }
-                }, this);
-            }
         }
     }
 
@@ -88,6 +81,9 @@ PhaserPlaybook = function(scene) {
             case 'play_animation':
                 this._playAnimation(actor, direction.parameters, playbook);
                 break;
+            case 'say_line':
+                this._sayLine(actor, direction.parameters, playbook);
+                break;
         }
     }
 
@@ -120,11 +116,15 @@ PhaserPlaybook = function(scene) {
     /**
       * PRIVATE
     **/
-    this._delayPlaybook = function(parameters, playbook){
+    this._delayPlaybook = function(parameters, playbook, callback){
         var duration = parameters.duration || 1000;
 
         var me = this;
         this.scene.time.delayedCall(duration, function(){
+            if(callback){
+                callback();
+            }
+
             me._runPlaybookNextDirection(playbook);
         });
     }
@@ -134,14 +134,14 @@ PhaserPlaybook = function(scene) {
     **/
     this._moveActor = function(actor, parameters, playbook){
         var newPos = parameters.new_position;
-        var blockScene = parameters.blockScene !== false;
+        var blockScene = parameters.block_scene !== false;
 
         if(!actor.sprite){
             this._createActor(actor, { }, playbook);
         }
 
         var duration = parameters.duration || 
-                this._calculateMovementDuration(actor.movement_speed, {x: actor.sprite.x, y: actor.sprite.y}, {x: newPos.x, y: newPos.y}) || 
+                this._calculateMovementDuration(actor.movement_speed || playbook.playbookObj.defaults.movement_speed, {x: actor.sprite.x, y: actor.sprite.y}, {x: newPos.x, y: newPos.y}) || 
                 1000;
 
         var me = this;
@@ -191,6 +191,47 @@ PhaserPlaybook = function(scene) {
                 me._runPlaybookNextDirection(playbook);
             })
         }
+    }
+
+    /**
+      * PRIVATE
+    **/
+    this._sayLine = function(actor, parameters, playbook){
+        var line = parameters.line || playbook.playbookObj.script[parameters.line_id].line || 'wasn\'t able to find line!';
+        var duration = parameters.duration || 1000;
+        var blockScene = parameters.block_scene !== false;
+
+        var fontSize = 24;
+        var fontFamily = 'Arial';
+        var fontColor = '#FFFFFF';
+
+        var textX = actor.sprite.x + actor.sprite.width/2;
+        var textY = actor.sprite.y - actor.sprite.height/2 - fontSize;
+
+        var newTextSprite = this.scene.add.text(textX, textY, line, 
+            {
+                fontFamily: fontFamily,
+                fontSize: fontSize,
+                color: fontColor,
+                wordWrap: {
+                    width: parameters.text_wrap_width || playbook.playbookObj.defaults.text_wrap_width || 500,
+                    useAdvancedWrap: true
+                }
+            }
+        );
+
+        if(!blockScene) {
+            this._runPlaybookNextDirection(playbook);
+        }
+
+        var me = this;
+        this.scene.time.delayedCall(duration, function(){
+            newTextSprite.destroy();
+
+            if(blockScene){
+                me._runPlaybookNextDirection(playbook);
+            }
+        });
     }
 }
 
