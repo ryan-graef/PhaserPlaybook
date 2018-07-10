@@ -198,7 +198,7 @@ PhaserPlaybook = function(scene) {
     **/
     this._sayLine = function(actor, parameters, playbook){
         var line = parameters.line || playbook.playbookObj.script[parameters.line_id].line || 'wasn\'t able to find line!';
-        var duration = parameters.duration || 1000;
+        var duration = parameters.duration || line.length * 50 || 1000;
         var blockScene = parameters.block_scene !== false;
 
         var fontSize = 24;
